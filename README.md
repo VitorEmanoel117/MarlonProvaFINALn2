@@ -6,34 +6,63 @@ Este projeto é uma implementação acadêmica de uma **Arquitetura de Microserv
 
 O sistema simula um backend completo de Delivery (tipo iFood/UberEats) onde cada responsabilidade é isolada em um serviço independente. A comunicação entre os serviços é feita de forma **assíncrona** utilizando **Filas em Memória** (`queue.Queue`), garantindo desacoplamento e alta performance.
 
-### 🏗️ Arquitetura
+### 🏗️ Arquitetura (Diagrama de Fluxo)
 
-```mermaid
-graph TD
-    Client[Cliente/Postman] -->|HTTP POST| Gateway[API Gateway :5000]
-    
-    subgraph "Fluxo de Pedido (Assíncrono)"
-        Gateway -->|HTTP| Receber[:5001]
-        Receber -->|Queue| FilaPedidos((Fila Pedidos))
-        FilaPedidos -->|Consome| Validar[:5002]
-        Validar -->|Queue| FilaValidacao((Fila Validação))
-        FilaValidacao -->|Consome| Processar[:5003]
-        Processar -->|TinyDB| DB[(db_pedidos)]
-        Processar -->|Queue| FilaPagto((Fila Pagamento))
-        FilaPagto -->|Consome| Pagto[:5004]
-    end
-    
-    subgraph "Fan-Out (Pós-Pagamento)"
-        Pagto -->|Queue| FilaNotifica((Fila Notifica))
-        Pagto -->|Queue| FilaAnalytics((Fila Analytics))
-        FilaNotifica -->|Consome| Notifica[:5005]
-        FilaAnalytics -->|Consome| Analytics[:5006]
-    end
-    
-    subgraph "Serviços Auxiliares"
-        Gateway -->|HTTP GET| Rec[:5007 Recomendação]
-        Analytics -->|TinyDB| DBHist[(db_historico)]
-    end
+```text
+CLIENTE / POSTMAN
+       │
+       │ (HTTP Request)
+       ▼
+┌──────────────────────────┐
+│   API GATEWAY (Lambda)   │ ───────────────────────────┐
+│          :5000           │                            │
+└────────────┬─────────────┘                            │
+             │                                          │ (GET /recomendacoes)
+             │ (POST /pedidos)                          ▼
+             ▼                                ┌───────────────────────┐
+┌──────────────────────────┐                  │ RECOMENDAÇÃO (Lambda) │
+│ RECEBER PEDIDO (Lambda)  │                  │         :5007         │
+│     :5001 (Producer)     │                  └───────────────────────┘
+└────────────┬─────────────┘
+             │
+             ▼
+     [   FILA_PEDIDOS   ] ▒▒▒▒▒▒▒▒▒▒▒
+             │
+             ▼
+┌──────────────────────────┐
+│ VALIDAR PEDIDO (Lambda)  │
+│      :5002 (Worker)      │
+└────────────┬─────────────┘
+             │
+             ▼
+     [  FILA_VALIDACAO  ] ▒▒▒▒▒▒▒▒▒▒▒
+             │
+             ▼
+┌──────────────────────────┐                  ┌──────────────────┐
+│ PROCESSAR PEDIDO (Lambda)│ ───────────────► │ TINYDB: PEDIDOS  │
+│     :5003 (Persiste)     │                  │(db_pedidos.json) │
+└────────────┬─────────────┘                  └──────────────────┘
+             │
+             ▼
+     [ FILA_PAGAMENTOS  ] ▒▒▒▒▒▒▒▒▒▒▒
+             │
+             ▼
+┌──────────────────────────┐
+│    PAGAMENTO (Lambda)    │
+│      :5004 (Simula)      │
+└────────────┬─────────────┘
+             │
+             │ (FAN-OUT: Processamento Paralelo)
+       ┌─────┴────────────────────────┐
+       │                              │
+       ▼                              ▼
+[  FILA_NOTIFICA   ]          [  FILA_ANALYTICS  ]
+       │                              │
+       ▼                              ▼
+┌──────────────────┐          ┌──────────────────┐      ┌────────────────────┐
+│ NOTIFICA (Lambda)│          │ANALYTICS (Lambda)│ ───► │ TINYDB: HISTORICO  │
+│      :5005       │          │      :5006       │      │(db_historico.json) │
+└──────────────────┘          └──────────────────┘      └────────────────────┘
 ```
 
 ---
